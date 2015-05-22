@@ -1,0 +1,8 @@
+<!-- This is a sample lanuch file, please change it based on your needs -->
+
+<launch>
+
+	<node name="EKF_node" pkg="thymio_project" type="EKF.py" output="screen">
+        </node>
+
+</launch>
