@@ -6,16 +6,35 @@ import math
 from numpy.linalg import inv
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 
 
+# Callbacks
 def joyCallback(msg):
 	x=0
 
-def OdomCallback():
-	x=0
-	
+def OdomCallback(msg):
 
+	global odom, last_odom, Ds, Dtheta
 
+	#print("Entre en el callback ")
+	last_odom[0] = odom[0]
+	last_odom[1] = odom[1]
+	last_odom[2] = odom[2]
+
+	odom[0] = msg.pose.pose.position.x
+	odom[1] = msg.pose.pose.position.y
+	odom[2] = msg.pose.pose.orientation.z
+
+	Dtheta = odom[2]-last_odom[2]
+
+	if math.cos(odom[0]) == 0 :		# When the robot is moving only in y axis
+		Ds = odom[1]-last_odom[1]
+	else:
+		Ds = (odom[0]-last_odom[0])/math.cos(odom[2])	
+		
+
+# Functions	
 def normalizedAngle(da):
 
 	da=math.fmod(da,2*math.pi)
@@ -28,24 +47,24 @@ def normalizedAngle(da):
 	return da
 
 
-def prediction_update(xi,P,Vnoise,Dd,Dangle):
+def prediction_update(xi,P,Vnoise,Ds,Dtheta):
 	
-	state_aux =numpy.array([(Dd)*math.cos(xi[2]+(Dangle/2)), 
-						(Dd)*math.sin(xi[2]+(Dangle/2)),
-						Dangle])
+	state_aux =numpy.array([(Ds)*math.cos(xi[2]+(Dtheta/2)), 
+						(Ds)*math.sin(xi[2]+(Dtheta/2)),
+						Dtheta])
 
 	xi = xi+state_aux				#-- state_aux is a 3X1 Matrix
 	xi[2] = normalizedAngle(xi[2])
 
-	x_comp = math.cos(xi[2]+Dangle/2)
-	y_comp = math.sin(xi[2]+Dangle/2)
+	x_comp = math.cos(xi[2]+Dtheta/2)
+	y_comp = math.sin(xi[2]+Dtheta/2)
 
-	F_1 = numpy.array([[1, 0, -Dd*y_comp],
-		[0, 1, Dd*x_comp],
+	F_1 = numpy.array([[1, 0, -Ds*y_comp],
+		[0, 1, Ds*x_comp],
 		[0, 0, 1]])
 
-	F_2 = numpy.array([[x_comp,  -Dd*y_comp],
-		[y_comp, Dd*x_comp],
+	F_2 = numpy.array([[x_comp,  -Ds*y_comp],
+		[y_comp, Ds*x_comp],
 		[0, 1]])
 
 	P = numpy.dot(F_1,P)
@@ -56,7 +75,7 @@ def prediction_update(xi,P,Vnoise,Dd,Dangle):
 
 	P = P + aux_P
 
-	return P
+	return xi, P
 
 def measurament_correction(xi,P,Wnoise,landmark_detected,zi):
 
@@ -95,6 +114,8 @@ def measurament_correction(xi,P,Wnoise,landmark_detected,zi):
 
 	P = P-aux_P
 	
+	return xi, P
+	
 
 if __name__ == "__main__":
 
@@ -102,19 +123,20 @@ if __name__ == "__main__":
 
 	rate = rospy.Rate(20)
 
-	joy_subscriber=rospy.Subscriber('joy_input',Joy,joyCallback,queue_size=1)
-	odom_subscriber=rospy.Subscriber('odom_input',Twist,OdomCallback,queue_size=1)
+	joy_subscriber=rospy.Subscriber('joy_input',Joy,joyCallback,queue_size=5)
+	odom_subscriber=rospy.Subscriber('odom_input',Odometry,OdomCallback,queue_size=1)
 
 
 	# Initialize odometry variables
-	global Dd
-	Dd = 0.0
-	global Dangle
-	Dangle = 0.0
+	Ds = 0.0
+	Dtheta = 0.0
+
+	last_odom = numpy.array ([0.0, 0.0, 0.0])
+	odom = numpy.array ([0.0, 0.0, 0.0])
 
 	# Landmarks variables
 	global landmark_detected
-	landmark_detected = numpy.array ([0.0, 0.0, 0.0])
+	landmark_detected = numpy.array ([0.0, 0.0, -1.0])
 
 	# Initialize EFK varialbes
 	global xi
@@ -138,12 +160,12 @@ if __name__ == "__main__":
 	
 	while not rospy.is_shutdown():
 
-		P = prediction_update(xi,P,Vnoise,Dd,Dangle)
+		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
 
 		if landmark_detected[2] != -1:
-			measurament_correction(xi,P,Wnoise,landmark_detected,zi)
-		
-		#print (P)
+			xi, P = measurament_correction(xi,P,Wnoise,landmark_detected,zi)
+		print (xi)
+		#print (odom[0])
 
 		# Control the rate of the node
 		rate.sleep()

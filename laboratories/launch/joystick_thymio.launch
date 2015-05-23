@@ -3,7 +3,7 @@
 <launch>
 
 	<node name="joy_node" pkg="joy" type="joy_node" output="screen" clear_params="true">
-		<param name="dev" type="str" value="/dev/input/js0"/>
+		<param name="dev" type="str" value="/dev/input/js1"/>
 	</node>
 
 	<node name="joystick_controller_node" pkg="robotics_labs" type="joystick_control.py" output="screen">

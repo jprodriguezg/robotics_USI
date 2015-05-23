@@ -3,6 +3,7 @@
 <launch>
 
 	<node name="EKF_node" pkg="thymio_project" type="EKF.py" output="screen">
+		<remap from="odom_input"  to="/odom"/>
         </node>
 
 </launch>
