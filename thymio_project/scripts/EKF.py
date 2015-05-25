@@ -3,38 +3,58 @@
 import rospy
 import numpy
 import math
+import os
+
 from numpy.linalg import inv
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Point
+from ar_track_alvar_msgs.msg import AlvarMarkers
+from ar_track_alvar_msgs.msg import AlvarMarker
 from nav_msgs.msg import Odometry
+
+CUBE_HALF_SIZE = 0.025
 
 
 # Callbacks
-def joyCallback(msg):
-	x=0
+
+def ar_track_Callback(msg):
+	
+	for i in msg.markers:
+		marker_id=marker.id
+            	pose=marker.pose
+            	pose.header.frame_id=marker.header.frame_id
+		point=positionInRobotFrame(pose)
+		if point:
+			theta=math.atan2(point.y,point.x)
+               		rho=math.sqrt(point.x*point.x +point.y*point.y)
+			'''
+			x = msg.markers[i].pose.pose.position.x
+			y = msg.markers[i].pose.pose.position.y
+			rho = math.sqrt(x*x +y*y)
+			theta = math.atan2(y,x)
+			'''
+	
+
 
 def OdomCallback(msg):
 
-	global odom, last_odom, Ds, Dtheta
+	global Ds, Dtheta
 
-	#print("Entre en el callback ")
-	last_odom[0] = odom[0]
-	last_odom[1] = odom[1]
-	last_odom[2] = odom[2]
-
-	odom[0] = msg.pose.pose.position.x
-	odom[1] = msg.pose.pose.position.y
-	odom[2] = msg.pose.pose.orientation.z
-
-	Dtheta = odom[2]-last_odom[2]
-
-	if math.cos(odom[0]) == 0 :		# When the robot is moving only in y axis
-		Ds = odom[1]-last_odom[1]
-	else:
-		Ds = (odom[0]-last_odom[0])/math.cos(odom[2])	
+	dt = 1.0/100		# Frame rate of /odom topic
+	#dt = msg.header.stamp.nsecs-last_time
+	Ds = msg.twist.twist.linear.x*dt
+	Dtheta = msg.twist.twist.angular.z*dt	
+	
+	#last_time =  msg.header.stamp.secs+float(msg.header.stamp.nsecs/1000000000.0)
+	#print(msg.header.seq)
+	#print(msg.header.stamp.secs)
+	#print(msg.header.stamp.nsecs)
+	#print(msg.header.stamp)
+	#print(float(msg.header.stamp.secs+float(msg.header.stamp.nsecs/1000000000.0)))
 		
 
-# Functions	
+# Helper Functions	
 def normalizedAngle(da):
 
 	da=math.fmod(da,2*math.pi)
@@ -46,7 +66,45 @@ def normalizedAngle(da):
 
 	return da
 
+def positionInRobotFrame(face_pose_in_camera_frame):
+        cube_pose_in_camera_frame=face_pose_in_camera_frame;
+        cube_pose_in_camera_frame.pose.position.z-=CUBE_HALF_SIZE;
+ 
+	tf = TransformListener(True)	
+	cube_pose_in_robot_frame = tf.transformPose("base_link",cube_pose_in_camera_frame)
+            
+	return Point(cube_pose_in_robot_frame.pose.position.x,
+		cube_pose_in_robot_frame.pose.position.y,
+		cube_pose_in_robot_frame.pose.position.z)
 
+
+def read_cube_positions(filename,cube_positions):
+        """ 
+	format: one marker per line, marker_id x y
+        marker_id: integer
+        x,y: float (coordinate of marker in global frame in meters)
+       
+        if not os.path.isfile(filename, cube_positions):
+            print "file ",filename,"does not exists"
+            print "can not read markers positions"
+            exit(1)
+            return
+
+	"""
+
+        f=open(filename)
+        for line in f.readlines():
+            s=line.split()
+            mid = int(s[0])
+            x=float(s[1])
+            y=float(s[2])
+            cube_positions[mid] = (x,y)
+        f.close()
+	
+	return cube_positions
+
+# EKF functions
+ 
 def prediction_update(xi,P,Vnoise,Ds,Dtheta):
 	
 	state_aux =numpy.array([(Ds)*math.cos(xi[2]+(Dtheta/2)), 
@@ -77,10 +135,10 @@ def prediction_update(xi,P,Vnoise,Ds,Dtheta):
 
 	return xi, P
 
-def measurament_correction(xi,P,Wnoise,landmark_detected,zi):
+def measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi):
 
-	x_comp = landmark_detected[0]-xi[0]
-	y_comp = landmark_detected[1]-xi[1]
+	x_comp = x_landmark-xi[0]
+	y_comp = y_landmark-xi[1]
 	r = math.sqrt(x_comp*x_comp+y_comp*y_comp)
 
 	H_1 = numpy.array([[-x_comp/r,-y_comp/r,0],
@@ -123,20 +181,21 @@ if __name__ == "__main__":
 
 	rate = rospy.Rate(20)
 
-	joy_subscriber=rospy.Subscriber('joy_input',Joy,joyCallback,queue_size=5)
 	odom_subscriber=rospy.Subscriber('odom_input',Odometry,OdomCallback,queue_size=1)
-
+	ar_track_subscriber=rospy.Subscriber('ar_track_input',AlvarMarkers,ar_track_Callback,queue_size=5)
+	
 
 	# Initialize odometry variables
 	Ds = 0.0
 	Dtheta = 0.0
 
-	last_odom = numpy.array ([0.0, 0.0, 0.0])
-	odom = numpy.array ([0.0, 0.0, 0.0])
-
 	# Landmarks variables
 	global landmark_detected
 	landmark_detected = numpy.array ([0.0, 0.0, -1.0])
+
+	cube_positions={}
+	cube_pose_file = rospy.get_param("~cube_pose_file",-1)
+	cube_positions = read_cube_positions(cube_pose_file,cube_positions)
 
 	# Initialize EFK varialbes
 	global xi
@@ -163,16 +222,12 @@ if __name__ == "__main__":
 		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
 
 		if landmark_detected[2] != -1:
-			xi, P = measurament_correction(xi,P,Wnoise,landmark_detected,zi)
+			(x_landmark,y_landmark) = cube_positions[landmark_detected[2]]
+			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
+
 		print (xi)
-		#print (odom[0])
 
 		# Control the rate of the node
 		rate.sleep()
 	rospy.signal_shutdown('Bye!')
 	
-
-	
-
-
-

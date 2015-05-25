@@ -4,6 +4,8 @@
 
 	<node name="EKF_node" pkg="thymio_project" type="EKF.py" output="screen">
 		<remap from="odom_input"  to="/odom"/>
+		<remap from="ar_track_input"  to="/ar_pose_marker"/>
+		<param name="cube_pose_file" value="/home/juan/Dropbox/USI/Robotics/Assignment 4/Matlab/landmarks.txt" />
         </node>
 
 </launch>
