@@ -9,33 +9,48 @@ from numpy.linalg import inv
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Point
+from geometry_msgs.msg import PoseStamped
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from ar_track_alvar_msgs.msg import AlvarMarker
 from nav_msgs.msg import Odometry
 
+
+
+#  Definition of some global variables!
 CUBE_HALF_SIZE = 0.025
+#  landmark detected info
+landmark_detected = numpy.array ([0.0, 0.0, -1.0])
+# Sensing output
+zi = numpy.array ([[0],[0]])
 
 
 # Callbacks
 
 def ar_track_Callback(msg):
 	
-	for i in msg.markers:
-		marker_id=marker.id
-            	pose=marker.pose
-            	pose.header.frame_id=marker.header.frame_id
-		point=positionInRobotFrame(pose)
-		if point:
-			theta=math.atan2(point.y,point.x)
-               		rho=math.sqrt(point.x*point.x +point.y*point.y)
-			'''
-			x = msg.markers[i].pose.pose.position.x
-			y = msg.markers[i].pose.pose.position.y
-			rho = math.sqrt(x*x +y*y)
-			theta = math.atan2(y,x)
-			'''
-	
+	global landmark_detected,zi
 
+	flag = 0
+	rho_ant = 1000
+	for i in msg.markers:
+		flag = 1
+		marker_id = msg.markers[i].id
+            	pose = msg.markers[i].pose
+            	pose.header.frame_id = msg.markers[i].header.frame_id
+		point=positionInRobotFrame(pose)
+		#print(i)
+		if point:
+			theta = math.atan2(point.y,point.x)
+               		rho = math.sqrt(point.x*point.x +point.y*point.y)
+
+			if rho < rho_ant:	# only takes the rho and theta of the nearest marker
+				rho_ant = rho
+				landmark_detected[2]=marker_id
+				zi[0][0] = rho
+				zi[1][0] = theta 
+	if flag == 0:
+		landmark_detected[2]=-1
+	
 
 def OdomCallback(msg):
 
@@ -99,9 +114,19 @@ def read_cube_positions(filename,cube_positions):
             x=float(s[1])
             y=float(s[2])
             cube_positions[mid] = (x,y)
-        f.close()
-	
+        f.close()	
 	return cube_positions
+
+# Publisher function
+
+def Fill_Publisher(out,xi):
+
+	out.header.stamp = rospy.Time.now()
+	out.pose.position.x = xi[0]
+	out.pose.position.y = xi[1]
+	out.pose.orientation.z = xi[2]
+	
+	return out
 
 # EKF functions
  
@@ -183,6 +208,7 @@ if __name__ == "__main__":
 
 	odom_subscriber=rospy.Subscriber('odom_input',Odometry,OdomCallback,queue_size=1)
 	ar_track_subscriber=rospy.Subscriber('ar_track_input',AlvarMarkers,ar_track_Callback,queue_size=5)
+	EKF_publisher = rospy.Publisher("EKF_output",PoseStamped, queue_size=2)
 	
 
 	# Initialize odometry variables
@@ -190,17 +216,13 @@ if __name__ == "__main__":
 	Dtheta = 0.0
 
 	# Landmarks variables
-	global landmark_detected
-	landmark_detected = numpy.array ([0.0, 0.0, -1.0])
-
+	
 	cube_positions={}
 	cube_pose_file = rospy.get_param("~cube_pose_file",-1)
 	cube_positions = read_cube_positions(cube_pose_file,cube_positions)
 
 	# Initialize EFK varialbes
-	global xi
 	xi = numpy.array ([0.2, 0.2, math.pi/2.0])
-	global P
 	P = numpy.array ([[1, 0, 0],
 		[0, 1, 0],
 		[0, 0, 0.07]])
@@ -214,9 +236,9 @@ if __name__ == "__main__":
 	Vangle = 0.01 
 	Vnoise = numpy.array([[Vd, 0],[0,Vangle]])
 
-	# Sensing output
-	zi = numpy.array ([[0],[0]])
-	
+	# EFK publish output
+	data_out = PoseStamped()
+
 	while not rospy.is_shutdown():
 
 		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
@@ -225,7 +247,9 @@ if __name__ == "__main__":
 			(x_landmark,y_landmark) = cube_positions[landmark_detected[2]]
 			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
 
-		print (xi)
+		# Publishing
+		data_out = Fill_Publisher(data_out,xi)
+		EKF_publisher.publish(data_out)
 
 		# Control the rate of the node
 		rate.sleep()
