@@ -36,7 +36,7 @@ def normalizedAngle(da):
 
 	return da
 
-def read_path_points(filename,cube_positions):
+def read_path_points(filename_1, filename_2 ,waypoints,pose_frame):
         """ 
 	format: one marker per line, marker_id x y
         marker_id: integer
@@ -50,18 +50,29 @@ def read_path_points(filename,cube_positions):
 
 	"""
 
-        f=open(filename)
+        f=open(filename_1)
+	i = 0
         for line in f.readlines():
-            s=line.split()
-            mid = int(s[0])
-            x=float(s[1])
-            y=float(s[2])
-            cube_positions[mid] = (x,y)
-	
-	numberofwaypoints = f.readlines()
+	    i = i+1
+            s=line.split(',')
+            x=float(s[0])-pose_frame
+            y=float(s[1])-pose_frame
+            waypoints[i] = (x,y)
+        f.close()
+
+	f=open(filename_2)
+        for line in f.readlines():
+	    i = i+1
+            s=line.split(',')
+            x=float(s[0])-pose_frame
+            y=float(s[1])-pose_frame
+            waypoints[i] = (x,y)
         f.close()
 	
-	return cube_positions, numberofwaypoints
+	# Save the number of waypoints
+	numberofwaypoints = i
+
+	return waypoints, numberofwaypoints
 
 # Publisher functions
 
@@ -83,7 +94,7 @@ def FillVelocityPublisher(out, linear_vel, angular_vel):
 def velocity_limit(rho,linear_vel):
 
 	delta_K = 0.01
-	if rho < 0.06 and rho >= 0.04):
+	if rho < 0.06 and rho >= 0.04:
 		linear_vel  = linear_vel + delta_K*5
 	elif  rho < 0.04 and rho > 0.02: 
 		linear_vel  = linear_vel + delta_K*2
@@ -128,9 +139,11 @@ if __name__ == "__main__":
 	waypoints_count = 1
 
 	# Creates the array with the path planned waypoints
+	pose_frame = -0.9
 	waypoints = {}
-	path_planned_file = rospy.get_param("~path_planned_file",-1)
-	waypoints, numberofwaypoints = read_path_points(path_planned_file,waypoints)
+	path_planned_file_1 = rospy.get_param("~path_planned_file_1",-1)
+	path_planned_file_2 = rospy.get_param("~path_planned_file_2",-1)
+	waypoints, numberofwaypoints = read_path_points(path_planned_file_1, path_planned_file_2, waypoints,pose_frame)
 
 	# Publisher objects
 	velocity_out = Twist()
@@ -147,8 +160,7 @@ if __name__ == "__main__":
 			angular_vel = 0.0
 
 		velocity_out = FillVelocityPublisher(velocity_out, linear_vel, angular_vel)	
-		vel_publisher.publish(velocity_out)
-			
+		vel_publisher.publish(velocity_out)			
 
 		# Control the rate of the node
 		rate.sleep()

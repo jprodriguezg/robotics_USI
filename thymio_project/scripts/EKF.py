@@ -13,13 +13,16 @@ from geometry_msgs.msg import PoseStamped
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from ar_track_alvar_msgs.msg import AlvarMarker
 from nav_msgs.msg import Odometry
+from tf import TransformListener
+from tf import Exception as TransformException
 
 
+tf_listener=None
 
 #  Definition of some global variables!
 CUBE_HALF_SIZE = 0.025
 #  landmark detected info
-landmark_detected = numpy.array ([0.0, 0.0, -1.0])
+nearest_landmark_id = -1.0
 # Sensing output
 zi = numpy.array ([[0],[0]])
 
@@ -28,28 +31,32 @@ zi = numpy.array ([[0],[0]])
 
 def ar_track_Callback(msg):
 	
-	global landmark_detected,zi
+	global nearest_landmark_id,zi
 
 	flag = 0
 	rho_ant = 1000
-	for i in msg.markers:
+	j = 0
+	for marker in msg.markers:
 		flag = 1
-		marker_id = msg.markers[i].id
-            	pose = msg.markers[i].pose
-            	pose.header.frame_id = msg.markers[i].header.frame_id
+		marker_id = marker.id
+            	pose = marker.pose
+            	pose.header.frame_id = marker.header.frame_id
 		point=positionInRobotFrame(pose)
-		#print(i)
 		if point:
 			theta = math.atan2(point.y,point.x)
                		rho = math.sqrt(point.x*point.x +point.y*point.y)
 
+			print(rho)
+
 			if rho < rho_ant:	# only takes the rho and theta of the nearest marker
 				rho_ant = rho
-				landmark_detected[2]=marker_id
+				nearest_landmark_id=marker_id
 				zi[0][0] = rho
 				zi[1][0] = theta 
+		j = j+1
+				
 	if flag == 0:
-		landmark_detected[2]=-1
+		nearest_landmark_id=-1
 	
 
 def OdomCallback(msg):
@@ -77,20 +84,28 @@ def normalizedAngle(da):
 		da=da-2*math.pi
 
 	if da < -math.pi :
-		da=da+2*math.pi
+		da=da+2*math.pirf
 
 	return da
 
 def positionInRobotFrame(face_pose_in_camera_frame):
-        cube_pose_in_camera_frame=face_pose_in_camera_frame;
-        cube_pose_in_camera_frame.pose.position.z-=CUBE_HALF_SIZE;
+        cube_pose_in_camera_frame=face_pose_in_camera_frame
+        cube_pose_in_camera_frame.pose.position.z-=CUBE_HALF_SIZE
+	global tf_listener 
+	#listener = TransformListener(True)
+	try:
+		cube_pose_in_robot_frame = tf_listener.transformPose("base_link",cube_pose_in_camera_frame)
+            	return Point(cube_pose_in_robot_frame.pose.position.x,
+                         cube_pose_in_robot_frame.pose.position.y,
+                         cube_pose_in_robot_frame.pose.position.z)
+
+	except TransformException as ex:
+		rospy.loginfo("received an exception trying to transform from %s to base_link\n" \
+                          % (face_pose_in_camera_frame.header.frame_id))
+		print ex
+		#return Point(0,0,0)
+		return None
  
-	tf = TransformListener(True)	
-	cube_pose_in_robot_frame = tf.transformPose("base_link",cube_pose_in_camera_frame)
-            
-	return Point(cube_pose_in_robot_frame.pose.position.x,
-		cube_pose_in_robot_frame.pose.position.y,
-		cube_pose_in_robot_frame.pose.position.z)
 
 
 def read_cube_positions(filename,cube_positions):
@@ -204,6 +219,9 @@ if __name__ == "__main__":
 
 	rospy.init_node('EKF_node')
 
+	global tf_listener 
+	tf_listener = TransformListener(True)
+
 	rate = rospy.Rate(20)
 
 	odom_subscriber=rospy.Subscriber('odom_input',Odometry,OdomCallback,queue_size=1)
@@ -243,9 +261,13 @@ if __name__ == "__main__":
 
 		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
 
-		if landmark_detected[2] != -1:
-			(x_landmark,y_landmark) = cube_positions[landmark_detected[2]]
+		'''
+		if nearest_landmark_id != -1:
+			Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
+			(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
 			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
+			print(nearest_landmark_id)
+		'''
 
 		# Publishing
 		data_out = Fill_Publisher(data_out,xi)

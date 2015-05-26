@@ -12,7 +12,8 @@
 	<!--node name="path_follow_node" pkg="thymio_project" type="path_follow.py" output="screen">
 		<remap from="velocities_output"  to="/cmd_vel"/>
 		<remap from="pose_input"  to="/EKF_prediction"/>
-		<param name="path_planned_file" value="/home/juan/Dropbox/USI/Robotics/Assignment 4/Matlab/G.csv" />
+		<param name="path_planned_file_1" value="/home/juan/Dropbox/USI/Robotics/Assignment 4/Matlab/I.csv" />
+		<param name="path_planned_file_2" value="/home/juan/Dropbox/USI/Robotics/Assignment 4/Matlab/G.csv" />
         </node-->
 
 </launch>
