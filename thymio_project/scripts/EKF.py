@@ -26,16 +26,16 @@ nearest_landmark_id = -1.0
 # Sensing output
 zi = numpy.array ([[0],[0]])
 
-
 # Callbacks
 
 def ar_track_Callback(msg):
+
+	#print("I'm in the callback")
 	
 	global nearest_landmark_id,zi
 
 	flag = 0
 	rho_ant = 1000
-	j = 0
 	for marker in msg.markers:
 		flag = 1
 		marker_id = marker.id
@@ -45,19 +45,19 @@ def ar_track_Callback(msg):
 		if point:
 			theta = math.atan2(point.y,point.x)
                		rho = math.sqrt(point.x*point.x +point.y*point.y)
-
-			print(rho)
-
+			#print(marker_id)
+			
 			if rho < rho_ant:	# only takes the rho and theta of the nearest marker
 				rho_ant = rho
 				nearest_landmark_id=marker_id
 				zi[0][0] = rho
-				zi[1][0] = theta 
-		j = j+1
-				
+				zi[1][0] = theta 	
 	if flag == 0:
 		nearest_landmark_id=-1
-	
+	else:
+		nearest_landmark_id = cube_id(nearest_landmark_id)
+
+	#print("I'm going out of the tread")
 
 def OdomCallback(msg):
 
@@ -74,6 +74,7 @@ def OdomCallback(msg):
 	#print(msg.header.stamp.nsecs)
 	#print(msg.header.stamp)
 	#print(float(msg.header.stamp.secs+float(msg.header.stamp.nsecs/1000000000.0)))
+	#print("I'm going out of the Odom tread")
 		
 
 # Helper Functions	
@@ -94,7 +95,7 @@ def positionInRobotFrame(face_pose_in_camera_frame):
 	global tf_listener 
 	#listener = TransformListener(True)
 	try:
-		cube_pose_in_robot_frame = tf_listener.transformPose("base_link",cube_pose_in_camera_frame)
+		cube_pose_in_robot_frame = tf_listener.transformPose("base_link",cube_pose_in_camera_frame)	
             	return Point(cube_pose_in_robot_frame.pose.position.x,
                          cube_pose_in_robot_frame.pose.position.y,
                          cube_pose_in_robot_frame.pose.position.z)
@@ -106,6 +107,16 @@ def positionInRobotFrame(face_pose_in_camera_frame):
 		#return Point(0,0,0)
 		return None
  
+def cube_id(mark_id):
+
+	i = 0
+	real_id = -1
+	while i <= 19:
+
+		if mark_id>= i*6 and mark_id<i*6+5:
+			real_id = i
+		i = i+1
+	return real_id 
 
 
 def read_cube_positions(filename,cube_positions):
@@ -129,7 +140,8 @@ def read_cube_positions(filename,cube_positions):
             x=float(s[1])
             y=float(s[2])
             cube_positions[mid] = (x,y)
-        f.close()	
+        f.close()
+	
 	return cube_positions
 
 # Publisher function
@@ -219,7 +231,7 @@ if __name__ == "__main__":
 
 	rospy.init_node('EKF_node')
 
-	global tf_listener 
+	#global tf_listener 
 	tf_listener = TransformListener(True)
 
 	rate = rospy.Rate(20)
@@ -259,16 +271,20 @@ if __name__ == "__main__":
 
 	while not rospy.is_shutdown():
 
-		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
 
-		'''
+		print("I'm in the while")
+		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
+		
+		
 		if nearest_landmark_id != -1:
+			#nearest_landmark_id = cube_id(nearest_landmark_id)
+			print("this is the real cube id ")
+			print (nearest_landmark_id) 
 			Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
 			(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
 			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
 			print(nearest_landmark_id)
-		'''
-
+		
 		# Publishing
 		data_out = Fill_Publisher(data_out,xi)
 		EKF_publisher.publish(data_out)

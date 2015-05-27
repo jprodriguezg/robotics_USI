@@ -6,7 +6,7 @@
 		<remap from="odom_input"  to="/odom"/>
 		<remap from="ar_track_input"  to="/ar_pose_marker"/>
 		<remap from="EKF_output"  to="/EKF_prediction"/>
-		<param name="cube_pose_file" value="/home/juan/Dropbox/USI/Robotics/Assignment 4/Matlab/landmarks.txt" />
+		<param name="cube_pose_file" value="/home/juan/Dropbox/USI/Robotics/Assignment 4/Matlab/landmarks_fixed.txt" />
         </node>
 
 	<!--node name="path_follow_node" pkg="thymio_project" type="path_follow.py" output="screen">
