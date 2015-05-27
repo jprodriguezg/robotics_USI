@@ -49,15 +49,11 @@ def ar_track_Callback(msg):
 			
 			if rho < rho_ant:	# only takes the rho and theta of the nearest marker
 				rho_ant = rho
-				nearest_landmark_id=marker_id
+				nearest_landmark_id=cube_id(marker_id)
 				zi[0][0] = rho
 				zi[1][0] = theta 	
 	if flag == 0:
 		nearest_landmark_id=-1
-	else:
-		nearest_landmark_id = cube_id(nearest_landmark_id)
-
-	#print("I'm going out of the tread")
 
 def OdomCallback(msg):
 
@@ -80,7 +76,9 @@ def OdomCallback(msg):
 # Helper Functions	
 def normalizedAngle(da):
 
-	da=math.fmod(da,2*math.pi)
+	#print(da)
+	da=da%2*math.pi
+	#print(da)
 	if da > math.pi :
 		da=da-2*math.pi
 
@@ -159,16 +157,17 @@ def Fill_Publisher(out,xi):
  
 def prediction_update(xi,P,Vnoise,Ds,Dtheta):
 	
-	state_aux =numpy.array([(Ds)*math.cos(xi[2]+(Dtheta/2)), 
-						(Ds)*math.sin(xi[2]+(Dtheta/2)),
-						Dtheta])
+	
+	state_aux =numpy.array([Ds*numpy.cos(xi[2]+(Dtheta/2)), Ds*numpy.sin(xi[2]+(Dtheta/2)), Dtheta])
 
+	
 	xi = xi+state_aux				#-- state_aux is a 3X1 Matrix
+	#print(xi[2])
 	xi[2] = normalizedAngle(xi[2])
 
-	x_comp = math.cos(xi[2]+Dtheta/2)
-	y_comp = math.sin(xi[2]+Dtheta/2)
-
+	x_comp = numpy.cos(xi[2]+Dtheta/2)
+	y_comp = numpy.sin(xi[2]+Dtheta/2)
+	
 	F_1 = numpy.array([[1, 0, -Ds*y_comp],
 		[0, 1, Ds*x_comp],
 		[0, 0, 1]])
@@ -186,38 +185,45 @@ def prediction_update(xi,P,Vnoise,Ds,Dtheta):
 	P = P + aux_P
 
 	return xi, P
+	
 
 def measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi):
 
 	x_comp = x_landmark-xi[0]
 	y_comp = y_landmark-xi[1]
-	r = math.sqrt(x_comp*x_comp+y_comp*y_comp)
+	r = numpy.sqrt(x_comp*x_comp+y_comp*y_comp)
 
 	H_1 = numpy.array([[-x_comp/r,-y_comp/r,0],
 		[y_comp/(r*r),-x_comp/(r*r),-1]])
 
 	H_2 = numpy.array([[1,0],[0,1]])
 
-	S_1 = numpy.array([[1,0],[0,1]])
+	#S_1 = numpy.array([[1,0],[0,1]])
 	S_1 = numpy.dot(H_1,P)
 	S_1 = numpy.dot(S_1,H_1.transpose())
 
-	S_2 = numpy.array([[1,0],[0,1]])
+	#S_2 = numpy.array([[1,0],[0,1]])
 	S_2 = numpy.dot(H_2,Wnoise)
 	S_2 = numpy.dot(S_2,H_2.transpose())
 
 	S = S_1+S_2
 
 	G = numpy.dot(P,H_1.transpose()) 
-	G = numpy.dot(G,inv(S))		#-- G is a 2X3 Matrix
+	G = numpy.dot(G,inv(S))		#-- G is a 3X2 Matrix
 	
 	zi_in =numpy.array([[r], [math.atan2(y_comp,x_comp)-xi[2]]])
 	inovation = zi-zi_in		#-- inovation is a 2X1 Matrix
-	inovation[1][0] = normalizedAngle(inovation[1][0])
+	inovation[1] = normalizedAngle(inovation[1])
 
 	xi_aux = numpy.dot(G,inovation)
-	xi = xi+xi_aux
-	xi[0][2] = normalizedAngle(xi[0][2])
+	xi_aux = xi_aux.transpose()
+	
+	# This avoids the transforamtion of xi (array)  to a matrix
+	xi[0] = xi[0]+xi_aux[0][0]
+	xi[1] = xi[1]+xi_aux[0][1]
+	xi[2] = xi[2]+xi_aux[0][2]
+	
+	xi[2] = normalizedAngle(xi[2])
 
 	aux_P = numpy.dot(G,H_1) 
 	aux_P = numpy.dot(aux_P,P)	#-- aux_P is a 3X3 Matrix
@@ -272,18 +278,16 @@ if __name__ == "__main__":
 	while not rospy.is_shutdown():
 
 
-		print("I'm in the while")
+		#print("I'm in the while")
 		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
 		
-		
 		if nearest_landmark_id != -1:
-			#nearest_landmark_id = cube_id(nearest_landmark_id)
-			print("this is the real cube id ")
-			print (nearest_landmark_id) 
+
 			Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
+			#print(nearest_landmark_id)
 			(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
 			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
-			print(nearest_landmark_id)
+		
 		
 		# Publishing
 		data_out = Fill_Publisher(data_out,xi)
