@@ -15,6 +15,7 @@ from ar_track_alvar_msgs.msg import AlvarMarker
 from nav_msgs.msg import Odometry
 from tf import TransformListener
 from tf import Exception as TransformException
+from robotics_lab_msgs.msg import EKF
 
 
 tf_listener=None
@@ -24,7 +25,7 @@ CUBE_HALF_SIZE = 0.025
 #  landmark detected info
 nearest_landmark_id = -1.0
 # Sensing output
-zi = numpy.array ([[0],[0]])
+zi = numpy.array ([[0.0],[0.0]])
 
 # Callbacks
 
@@ -50,20 +51,26 @@ def ar_track_Callback(msg):
 			if rho < rho_ant:	# only takes the rho and theta of the nearest marker
 				rho_ant = rho
 				nearest_landmark_id=cube_id(marker_id)
-				zi[0][0] = rho
-				zi[1][0] = theta 	
+				#print(rho)
+				#print(theta)
+				zi[0] = rho
+				zi[1] = theta 	
+				#print(zi)
 	if flag == 0:
 		nearest_landmark_id=-1
 
 def OdomCallback(msg):
 
-	global Ds, Dtheta
+	global Ds, Dtheta, data_out
 
 	dt = 1.0/100		# Frame rate of /odom topic
 	#dt = msg.header.stamp.nsecs-last_time
 	Ds = msg.twist.twist.linear.x*dt
 	Dtheta = msg.twist.twist.angular.z*dt	
-	
+
+	data_out.Odom = msg.pose.pose
+
+
 	#last_time =  msg.header.stamp.secs+float(msg.header.stamp.nsecs/1000000000.0)
 	#print(msg.header.seq)
 	#print(msg.header.stamp.secs)
@@ -76,14 +83,12 @@ def OdomCallback(msg):
 # Helper Functions	
 def normalizedAngle(da):
 
-	#print(da)
-	da=da%2*math.pi
-	#print(da)
+	da = math.fmod(da,2*math.pi)
 	if da > math.pi :
 		da=da-2*math.pi
 
 	if da < -math.pi :
-		da=da+2*math.pirf
+		da=da+2*math.pi
 
 	return da
 
@@ -144,12 +149,17 @@ def read_cube_positions(filename,cube_positions):
 
 # Publisher function
 
-def Fill_Publisher(out,xi):
+def Fill_Publisher(out, xi, nearest_landmark_id, xlandmark, ylandmark, zi):
 
 	out.header.stamp = rospy.Time.now()
-	out.pose.position.x = xi[0]
-	out.pose.position.y = xi[1]
-	out.pose.orientation.z = xi[2]
+	out.landmark_id = nearest_landmark_id
+	out.rho = zi[0]
+	out.theta = zi[1]
+	out.landmark.x = xlandmark
+	out.landmark.y = ylandmark
+	out.EKF_prediction.position.x = xi[0]
+	out.EKF_prediction.position.y = xi[1]
+	out.EKF_prediction.orientation.z = xi[2]
 	
 	return out
 
@@ -214,6 +224,7 @@ def measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi):
 	zi_in =numpy.array([[r], [math.atan2(y_comp,x_comp)-xi[2]]])
 	inovation = zi-zi_in		#-- inovation is a 2X1 Matrix
 	inovation[1] = normalizedAngle(inovation[1])
+	#print(inovation)
 
 	xi_aux = numpy.dot(G,inovation)
 	xi_aux = xi_aux.transpose()
@@ -244,7 +255,7 @@ if __name__ == "__main__":
 
 	odom_subscriber=rospy.Subscriber('odom_input',Odometry,OdomCallback,queue_size=1)
 	ar_track_subscriber=rospy.Subscriber('ar_track_input',AlvarMarkers,ar_track_Callback,queue_size=5)
-	EKF_publisher = rospy.Publisher("EKF_output",PoseStamped, queue_size=2)
+	EKF_publisher = rospy.Publisher("EKF_output",EKF, queue_size=2)
 	
 
 	# Initialize odometry variables
@@ -273,7 +284,7 @@ if __name__ == "__main__":
 	Vnoise = numpy.array([[Vd, 0],[0,Vangle]])
 
 	# EFK publish output
-	data_out = PoseStamped()
+	data_out = EKF()
 
 	while not rospy.is_shutdown():
 
@@ -284,13 +295,15 @@ if __name__ == "__main__":
 		if nearest_landmark_id != -1:
 
 			Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
-			#print(nearest_landmark_id)
+			#print(zi)
 			(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
 			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
-		
-		
+			data_out = Fill_Publisher(data_out,xi, nearest_landmark_id, x_landmark, x_landmark, zi)		
+		else:
+			data_out = Fill_Publisher(data_out,xi, -1, -1.0, -1.0, zi)
+			
+	
 		# Publishing
-		data_out = Fill_Publisher(data_out,xi)
 		EKF_publisher.publish(data_out)
 
 		# Control the rate of the node
