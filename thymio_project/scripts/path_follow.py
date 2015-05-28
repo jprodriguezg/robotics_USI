@@ -9,6 +9,7 @@ from numpy.linalg import inv
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped
+from robotics_lab_msgs.msg import path_follow
 
 
 # Initialize some global variables
@@ -75,13 +76,19 @@ def read_path_points(filename_1, filename_2 ,waypoints,pose_frame):
 	return waypoints, numberofwaypoints
 
 # Publisher functions
+def FillPathFollowPublisher(out, waypoints_count, x_waypoint, y_waypoint, linear_vel, angular_vel):
 
-def FillPathFollowPublisher(out):
-
+	global xi
 	out.header.stamp = rospy.Time.now()
-	out.pose.position.x = xi[0]
-	out.pose.position.y = xi[1]
-	out.pose.orientation.z = xi[2]
+	out.waypoint_id = waypoints_count
+	out.waypoint_pose.x = x_waypoint
+	out.waypoint_pose.y = y_waypoint
+	out.robot_pose.position.x = xi[0]
+	out.robot_pose.position.y = xi[1]
+	out.robot_pose.orientation.z = xi[2]
+	out.control_vel.linear.x = linear_vel
+	out.control_vel.angular.z = angular_vel
+
 	
 	return out
 
@@ -89,9 +96,11 @@ def FillVelocityPublisher(out, linear_vel, angular_vel):
 	out.linear.x = linear_vel
 	out.angular.z = angular_vel
 
+	return out
+
 # control functions
 
-def velocity_limit(rho,linear_vel):
+def velocity_limit(rho,linear_vel,angular_vel):
 
 	delta_K = 0.01
 	if rho < 0.06 and rho >= 0.04:
@@ -99,7 +108,14 @@ def velocity_limit(rho,linear_vel):
 	elif  rho < 0.04 and rho > 0.02: 
 		linear_vel  = linear_vel + delta_K*2
 
-	return linear_vel
+	#linear_vel = math.min(linear_vel,1)
+	#linear_vel = math.max(linear_vel,-1)
+
+	#angular_vel = math.min(angular_vel,4)
+	#angular_vel = math.max(angularar_vel,-4)
+
+
+	return linear_vel,angular_vel
 
 def robot_control(xi,x_waypoint,y_waypoint, waypoints_count, numberofwaypoints):
 
@@ -115,8 +131,10 @@ def robot_control(xi,x_waypoint,y_waypoint, waypoints_count, numberofwaypoints):
 	alpha_control = normalizedAngle(alpha_control)
 
 	linear_vel = K_gain[0]*rho_control
-	linear_vel = velocity_limit(rho_control,linear_vel)
+	 
 	angular_vel = K_gain[1]*alpha_control+K_gain[2]*betha_control
+
+	linear_vel, angular_vel = velocity_limit(rho_control,linear_vel,angular_vel)
 
 	if rho_control < MindistanceToWayPoint and waypoints_count<=numberofwaypoints:
 		waypoints_count = waypoints_count+1
@@ -132,6 +150,7 @@ if __name__ == "__main__":
 
 	odom_subscriber=rospy.Subscriber('pose_input',PoseStamped,EKFCallback,queue_size=1)
 	vel_publisher = rospy.Publisher("velocities_output",Twist, queue_size=2)
+	out_publisher = rospy.Publisher("path_follow_output",path_follow, queue_size=2)
 
 	K_gain = numpy.array([3.0/2.0,8.0/2.5,-1.5/2.5])
 	linear_vel = 0.0
@@ -147,11 +166,13 @@ if __name__ == "__main__":
 
 	# Publisher objects
 	velocity_out = Twist()
+	path_follow_out = path_follow()
 	
 
 	while not rospy.is_shutdown():
 		
 		if waypoints_count<=numberofwaypoints:
+			#print(waypoints_count)
 			(x_waypoint,y_waypoint) = waypoints[waypoints_count]
 			linear_vel, angular_vel, waypoints_count = robot_control(xi,x_waypoint,y_waypoint, waypoints_count, numberofwaypoints)
 
@@ -159,8 +180,13 @@ if __name__ == "__main__":
 			linear_vel = 0.0
 			angular_vel = 0.0
 
+
+		# Publishing
 		velocity_out = FillVelocityPublisher(velocity_out, linear_vel, angular_vel)	
-		vel_publisher.publish(velocity_out)			
+		vel_publisher.publish(velocity_out)	
+
+		path_follow_out = FillPathFollowPublisher(path_follow_out, waypoints_count, x_waypoint, y_waypoint, linear_vel, angular_vel)
+		out_publisher.publish(path_follow_out)	
 
 		# Control the rate of the node
 		rate.sleep()
