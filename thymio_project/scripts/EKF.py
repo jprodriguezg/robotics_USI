@@ -298,7 +298,7 @@ if __name__ == "__main__":
 			#print(zi)
 			(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
 			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
-			data_out = Fill_Publisher(data_out,xi, nearest_landmark_id, x_landmark, x_landmark, zi)		
+			data_out = Fill_Publisher(data_out,xi, nearest_landmark_id, x_landmark, y_landmark, zi)		
 		else:
 			data_out = Fill_Publisher(data_out,xi, -1, -1.0, -1.0, zi)
 			
