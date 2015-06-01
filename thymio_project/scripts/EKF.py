@@ -298,7 +298,7 @@ if __name__ == "__main__":
 				Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
 				#print(zi)
 				(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
-				#xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
+				xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
 				data_out = Fill_Publisher(data_out,xi, nearest_landmark_id, x_landmark, y_landmark, zi)		
 			else:
 				data_out = Fill_Publisher(data_out,xi, -1, -1.0, -1.0, zi)
