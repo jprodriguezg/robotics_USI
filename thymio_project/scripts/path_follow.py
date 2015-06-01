@@ -130,7 +130,7 @@ def velocity_limit(rho,linear_vel,angular_vel,linear_limit,angular_limit):
 
 def robot_control(xi,x_waypoint,y_waypoint, waypoints_count, numberofwaypoints):
 
-	MindistanceToWayPoint = 0.04
+	MindistanceToWayPoint = 0.05
 	linear_limit = 0.02
 
 	dx = x_waypoint-xi[0]
