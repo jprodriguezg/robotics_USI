@@ -131,7 +131,7 @@ def velocity_limit(rho,linear_vel,angular_vel,linear_limit,angular_limit):
 def robot_control(xi,x_waypoint,y_waypoint, waypoints_count, numberofwaypoints):
 
 	MindistanceToWayPoint = 0.025
-	linear_limit = 1.0
+	linear_limit = 0.02
 
 	dx = x_waypoint-xi[0]
 	dy = y_waypoint-xi[1]
@@ -146,8 +146,8 @@ def robot_control(xi,x_waypoint,y_waypoint, waypoints_count, numberofwaypoints):
 		linear_vel = K_gain[0]*rho_control
 		angular_limit = 0.2
 	else:
-		linear_vel = 0.01
-		angular_limit = 1.0
+		linear_vel = 0.005
+		angular_limit = 0.5
 	 
 	angular_vel = K_gain[1]*alpha_control+K_gain[2]*betha_control
 

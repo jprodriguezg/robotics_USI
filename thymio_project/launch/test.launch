@@ -6,16 +6,15 @@
 		<remap from="odom_input"  to="/odom"/>
 		<remap from="ar_track_input"  to="/ar_pose_marker"/>
 		<remap from="EKF_output"  to="/EKF_prediction"/>
-		<param name="cube_pose_file" value="(find thymio_project)/scenes/landmarks_fixed.txt" />
-
+		<param name="cube_pose_file" value="$(find thymio_project)/scenes/landmarks_fixed.txt" />
         </node>
 
 	<node name="path_follow_node" pkg="thymio_project" type="path_follow.py" output="screen">
 		<remap from="velocities_output"  to="/cmd_vel"/>
 		<remap from="pose_input"  to="/EKF_prediction"/>
 		<remap from="path_follow_output"  to="/path_planned_controller"/>
-		<param name="path_planned_file_1" value="(find thymio_project)/paths/PathToI.csv" />
-		<param name="path_planned_file_2" value="(find thymio_project)/paths/PathToG.csv" />
+		<param name="path_planned_file_1" value="$(find thymio_project)/paths/PathToI.csv" />
+		<param name="path_planned_file_2" value="$(find thymio_project)/paths/PathToG.csv" />
         </node>
 
 </launch>

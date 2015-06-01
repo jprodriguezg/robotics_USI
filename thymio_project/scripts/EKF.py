@@ -19,7 +19,7 @@ from robotics_lab_msgs.msg import EKF
 
 
 tf_listener=None
-
+time = None
 #  Definition of some global variables!
 CUBE_HALF_SIZE = 0.025
 #  landmark detected info
@@ -61,24 +61,20 @@ def ar_track_Callback(msg):
 
 def OdomCallback(msg):
 
-	global Ds, Dtheta, data_out
+	global Ds, Dtheta, data_out, time, step
 
-	dt = 1.0/100		# Frame rate of /odom topic
+	dt = 1.0/10.0		# Frame rate of /odom topic
+	if(time):
+		dt = (msg.header.stamp-time).to_sec()
+		step = msg.header.seq
+		#print("real dt", dt)
+
+	time = msg.header.stamp
 	#dt = msg.header.stamp.nsecs-last_time
 	Ds = msg.twist.twist.linear.x*dt
 	Dtheta = msg.twist.twist.angular.z*dt	
 
 	data_out.Odom = msg.pose.pose
-
-
-	#last_time =  msg.header.stamp.secs+float(msg.header.stamp.nsecs/1000000000.0)
-	#print(msg.header.seq)
-	#print(msg.header.stamp.secs)
-	#print(msg.header.stamp.nsecs)
-	#print(msg.header.stamp)
-	#print(float(msg.header.stamp.secs+float(msg.header.stamp.nsecs/1000000000.0)))
-	#print("I'm going out of the Odom tread")
-		
 
 # Helper Functions	
 def normalizedAngle(da):
@@ -251,7 +247,7 @@ if __name__ == "__main__":
 	#global tf_listener 
 	tf_listener = TransformListener(True)
 
-	rate = rospy.Rate(20)
+	rate = rospy.Rate(25)
 
 	odom_subscriber=rospy.Subscriber('odom_input',Odometry,OdomCallback,queue_size=1)
 	ar_track_subscriber=rospy.Subscriber('ar_track_input',AlvarMarkers,ar_track_Callback,queue_size=5)
@@ -261,6 +257,9 @@ if __name__ == "__main__":
 	# Initialize odometry variables
 	Ds = 0.0
 	Dtheta = 0.0
+
+	step = 0.0 
+	last_step = 0.0
 
 	# Landmarks variables
 	
@@ -290,21 +289,21 @@ if __name__ == "__main__":
 
 
 		#print("I'm in the while")
-		xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
-		
-		if nearest_landmark_id != -1:
 
-			Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
-			#print(zi)
-			(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
-			xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
-			data_out = Fill_Publisher(data_out,xi, nearest_landmark_id, x_landmark, y_landmark, zi)		
-		else:
-			data_out = Fill_Publisher(data_out,xi, -1, -1.0, -1.0, zi)
-			
-	
-		# Publishing
-		EKF_publisher.publish(data_out)
+		if step > last_step:
+			xi, P = prediction_update(xi,P,Vnoise,Ds,Dtheta)
+			last_step = step
+			if nearest_landmark_id != -1:
+
+				Wnoise[0][0] = 0.004*math.pow(zi[0][0],4)		# Computes the covariance matrix with rho of nearest marker
+				#print(zi)
+				(x_landmark,y_landmark) = cube_positions[nearest_landmark_id]
+				#xi, P = measurament_correction(xi,P,Wnoise,x_landmark,y_landmark,zi)
+				data_out = Fill_Publisher(data_out,xi, nearest_landmark_id, x_landmark, y_landmark, zi)		
+			else:
+				data_out = Fill_Publisher(data_out,xi, -1, -1.0, -1.0, zi)
+			# Publishing
+			EKF_publisher.publish(data_out)
 
 		# Control the rate of the node
 		rate.sleep()
